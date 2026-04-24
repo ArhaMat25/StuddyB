@@ -748,9 +748,12 @@ class TelegramBot:
         if update and update.effective_message:
             await update.effective_message.reply_text("⚠️ Произошла ошибка. Попробуйте позже.")
 
-    # ============= МЕТОД RUN - ЭТО САМОЕ ВАЖНОЕ! =============
     def run(self):
         """Запуск бота"""
+        # Создаём новый event loop для этого потока
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         request = HTTPXRequest(
             connect_timeout=60.0,
             read_timeout=60.0,
@@ -765,7 +768,15 @@ class TelegramBot:
         app.add_error_handler(self.error_handler)
 
         logger.info("🚀 Бот запущен (polling с таймаутами 60 сек)")
-        app.run_polling(poll_interval=1.0, timeout=60, drop_pending_updates=True)
+        
+        # Запускаем polling с правильным event loop
+        try:
+            app.run_polling(poll_interval=1.0, timeout=60, drop_pending_updates=True)
+        except Exception as e:
+            logger.error(f"Ошибка при запуске polling: {e}")
+            raise
+        finally:
+            loop.close()
 
 # ============= FLASK ДЛЯ RENDER =============
 flask_app = Flask(__name__)
