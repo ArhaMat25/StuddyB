@@ -1,9 +1,10 @@
 import os
-import threading
+import logging
 from flask import Flask
-from bot import run_bot
 
-# Создаём Flask-приложение для healthcheck'ов
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -12,10 +13,6 @@ def health():
     return "OK", 200
 
 if __name__ == '__main__':
-    # Запускаем бота в фоновом потоке
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    
-    # Запускаем Flask-сервер на порту, который дал Render
     port = int(os.environ.get("PORT", 5000))
+    logger.info(f"🌐 Flask сервер запущен на порту {port}")
     flask_app.run(host="0.0.0.0", port=port)
