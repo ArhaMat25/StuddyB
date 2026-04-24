@@ -1,3 +1,8 @@
 #!/bin/bash
-# Запускаем Flask-обёртку (или ваш основной бот)
-python app.py
+set -e
+
+# Запускаем Flask в фоне
+python app.py &
+
+# Запускаем бота
+python bot.py
