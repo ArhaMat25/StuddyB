@@ -44,9 +44,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ============= КОНФИГУРАЦИЯ =============
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-GIGACHAT_CLIENT_ID = os.getenv('GIGACHAT_CLIENT_ID')
-GIGACHAT_CLIENT_SECRET = os.getenv('GIGACHAT_CLIENT_SECRET')
+#TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+#GIGACHAT_CLIENT_ID = os.getenv('GIGACHAT_CLIENT_ID')
+#GIGACHAT_CLIENT_SECRET = os.getenv('GIGACHAT_CLIENT_SECRET')
 MAX_RETRIES = 3
 
 if not TELEGRAM_TOKEN:
