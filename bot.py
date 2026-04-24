@@ -1,44 +1,29 @@
 import os
-import sys
 import logging
-import threading
-from flask import Flask
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
-# Настройка логирования
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Переменные окружения
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-if not TELEGRAM_TOKEN:
-    logger.error("❌ TELEGRAM_TOKEN не задан!")
-    sys.exit(1)
+async def start(update: Update, context):
+    await update.message.reply_text("✅ Бот работает на Render!")
 
-# Импорт бота (замените на ваш bot.py)
-try:
-    from bot import run_bot
-    logger.info("✅ Бот импортирован успешно")
-except ImportError as e:
-    logger.error(f"❌ Ошибка импорта бота: {e}")
-    logger.info("💡 Создайте файл bot.py с функцией run_bot()")
-    run_bot = None
+async def echo(update: Update, context):
+    await update.message.reply_text(f"Вы сказали: {update.message.text}")
 
-flask_app = Flask(__name__)
-
-@flask_app.route('/')
-@flask_app.route('/health')
-def health():
-    return "OK", 200
+def run_bot():
+    logger.info("🚀 Запуск Telegram бота...")
+    if not TELEGRAM_TOKEN:
+        logger.error("❌ TELEGRAM_TOKEN не задан!")
+        return
+    
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+    logger.info("✅ Бот запущен и ждёт сообщения")
+    app.run_polling()
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    logger.info(f"🌐 Flask сервер запущен на порту {port}")
-    
-    if run_bot:
-        bot_thread = threading.Thread(target=run_bot, daemon=True)
-        bot_thread.start()
-        logger.info("🤖 Бот запущен в фоновом потоке")
-    else:
-        logger.warning("⚠️ Бот не запущен: функция run_bot не найдена")
-    
-    flask_app.run(host="0.0.0.0", port=port)
+    run_bot()
