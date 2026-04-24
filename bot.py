@@ -12,15 +12,13 @@ from typing import Optional, Dict, List, Tuple
 from contextlib import contextmanager
 
 import requests
-import base64
 import pandas as pd
 import pdfplumber
 import pytesseract
 from PIL import Image
 from icalendar import Calendar, Event
-from dotenv import load_dotenv
 
-# Telegram
+# Telegram imports
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, InputFile
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
@@ -29,13 +27,18 @@ from telegram.ext import (
 from telegram.request import HTTPXRequest
 from telegram.error import TimedOut, NetworkError
 
-# Загрузка переменных окружения
-load_dotenv()
+# ============= КОНФИГУРАЦИЯ =============
+# Прямое указание токена (для Railway)
+TELEGRAM_TOKEN = "8573998335:AAENV4S0UhOUAmc3RpzEeFDLuModI36aqhM"
 
-# ============= НАСТРОЙКА ЛОГИРОВАНИЯ =============
+# GigaChat credentials (опционально)
+GIGACHAT_CLIENT_ID = "019ac450-7c0b-7686-a4ec-e979dd4fa0f5"
+GIGACHAT_CLIENT_SECRET = "8dc579fc-56ee-49bd-b8cd-a0cd3fe4ae56"
+
+# Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=getattr(logging, os.getenv('LOG_LEVEL', 'INFO')),
+    level=logging.INFO,
     handlers=[
         logging.FileHandler('bot.log', encoding='utf-8'),
         logging.StreamHandler()
@@ -43,20 +46,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ============= КОНФИГУРАЦИЯ =============
-#TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-#GIGACHAT_CLIENT_ID = os.getenv('GIGACHAT_CLIENT_ID')
-#GIGACHAT_CLIENT_SECRET = os.getenv('GIGACHAT_CLIENT_SECRET')
-MAX_RETRIES = 3
-
-if not TELEGRAM_TOKEN:
-    raise ValueError("TELEGRAM_TOKEN не задан в .env")
-
+# Пути
 DATA_DIR = Path("bot_data")
 DATA_DIR.mkdir(exist_ok=True)
 DB_PATH = DATA_DIR / "bot_data.db"
 
-# ============= БАЗА ДАННЫХ С ПУЛОМ СОЕДИНЕНИЙ =============
+# ============= БАЗА ДАННЫХ =============
 class DatabaseManager:
     def __init__(self, db_path: Path):
         self.db_path = db_path
@@ -130,7 +125,7 @@ class ReplacementParser:
         return None, None
 
     def _extract_classroom(self, text: str) -> Optional[str]:
-        match = re.search(r'кабинете?\s*(\d+)', text)
+        match = re.search(r'кабинет[е]?\s*(\d+)', text)
         return match.group(1) if match else None
 
     def _get_day_offset(self, offset: int) -> str:
@@ -149,15 +144,15 @@ class ScheduleEditor:
             cur = conn.cursor()
             cur.execute("SELECT 1 FROM schedule WHERE user_id=? AND day=? AND lesson_number=?", (user_id, day, lesson_num))
             if cur.fetchone():
+                conn.close()
                 return {'success': False, 'message': 'Слот уже занят'}
             cur.execute("INSERT INTO schedule (user_id, day, lesson_number, subject, room) VALUES (?,?,?,?,?)",
                         (user_id, day, lesson_num, subject, room))
             conn.commit()
-            return {'success': True, 'message': f'Урок {subject} добавлен'}
-        except Exception as e:
-            return {'success': False, 'message': str(e)}
-        finally:
             conn.close()
+            return {'success': True, 'message': f'✅ Урок {subject} добавлен'}
+        except Exception as e:
+            return {'success': False, 'message': f'Ошибка: {e}'}
 
     def replace_lesson(self, user_id: int, day: str, lesson_num: int, subject: str, room: str = "") -> dict:
         try:
@@ -166,11 +161,10 @@ class ScheduleEditor:
             cur.execute("UPDATE schedule SET subject=?, room=? WHERE user_id=? AND day=? AND lesson_number=?",
                         (subject, room, user_id, day, lesson_num))
             conn.commit()
-            return {'success': True, 'message': f'Урок заменён на {subject}'}
-        except Exception as e:
-            return {'success': False, 'message': str(e)}
-        finally:
             conn.close()
+            return {'success': True, 'message': f'🔄 Урок заменён на {subject}'}
+        except Exception as e:
+            return {'success': False, 'message': f'Ошибка: {e}'}
 
     def remove_lesson(self, user_id: int, day: str, lesson_num: int = None, subject: str = None) -> dict:
         try:
@@ -181,32 +175,32 @@ class ScheduleEditor:
             elif subject:
                 cur.execute("DELETE FROM schedule WHERE user_id=? AND day=? AND subject LIKE ?", (user_id, day, f'%{subject}%'))
             else:
-                return {'success': False, 'message': 'Укажите номер или предмет'}
+                conn.close()
+                return {'success': False, 'message': 'Укажите номер урока или предмет'}
             conn.commit()
-            return {'success': True, 'message': 'Урок удалён'}
-        except Exception as e:
-            return {'success': False, 'message': str(e)}
-        finally:
             conn.close()
+            return {'success': True, 'message': '🗑️ Урок удалён'}
+        except Exception as e:
+            return {'success': False, 'message': f'Ошибка: {e}'}
 
     def parse_add_command(self, text: str) -> dict:
         day = self._extract_day(text.lower())
         lesson_num = self._extract_number(text)
         subject = self._extract_subject(text)
         if not day or not lesson_num or not subject:
-            return {'success': False, 'message': 'Не удалось распознать команду'}
+            return {'success': False, 'message': '❌ Не удалось распознать команду.\nПример: Добавь урок в понедельник 3-м уроком математику'}
         room = self._extract_room(text)
         return {'success': True, 'day': day, 'lesson_number': lesson_num, 'subject': subject, 'room': room}
 
     def parse_remove_command(self, text: str) -> dict:
         day = self._extract_day(text.lower())
-        lesson_num = self._extract_number(text)
         if not day:
-            return {'success': False, 'message': 'Не указан день'}
+            return {'success': False, 'message': '❌ Не указан день'}
+        lesson_num = self._extract_number(text)
         if not lesson_num:
             subject = self._extract_subject(text)
             if not subject:
-                return {'success': False, 'message': 'Не указан номер урока или предмет'}
+                return {'success': False, 'message': '❌ Укажите номер урока или предмет'}
             return {'success': True, 'day': day, 'subject': subject}
         return {'success': True, 'day': day, 'lesson_number': lesson_num}
 
@@ -222,14 +216,15 @@ class ScheduleEditor:
         return int(match.group(1)) if match else None
 
     def _extract_subject(self, text: str) -> Optional[str]:
-        subjects = ['математика', 'физика', 'химия', 'биология', 'история', 'английский', 'русский', 'литература', 'информатика']
+        subjects = ['математика', 'физика', 'химия', 'биология', 'история', 'география',
+                   'английский', 'русский', 'литература', 'информатика', 'физкультура']
         for subj in subjects:
             if subj in text:
                 return subj
         return None
 
     def _extract_room(self, text: str) -> str:
-        match = re.search(r'кабинет\s*(\d+)', text)
+        match = re.search(r'кабинет[е]?\s*(\d+)', text)
         return match.group(1) if match else ''
 
 # ============= RAG-СИСТЕМА =============
@@ -245,21 +240,23 @@ class ScheduleRAGSystem:
 
     def generate_precise_answer(self, entities: dict, lessons: list, day: str) -> str:
         if not lessons:
-            return f"Нет расписания на {day}"
+            return f"📭 Нет расписания на {day}"
         if entities['lesson_number']:
             for les in lessons:
                 if les[1] == entities['lesson_number']:
-                    return f"{day}, {entities['lesson_number']}-й урок: {les[3]}"
-            return f"{entities['lesson_number']}-го урока нет в расписании"
+                    room = f" (каб. {les[4]})" if les[4] else ""
+                    return f"📚 {day}, {entities['lesson_number']}-й урок: {les[3]}{room}"
+            return f"❌ {entities['lesson_number']}-го урока нет в расписании"
         if entities['subject']:
             for les in lessons:
                 if entities['subject'] in les[3].lower():
-                    return f"{entities['subject']} на {day} — {les[1]}-й урок"
-            return f"{entities['subject']} не найден на {day}"
+                    return f"📖 {entities['subject']} на {day} — {les[1]}-й урок"
+            return f"❌ {entities['subject']} не найден на {day}"
         # общее расписание
         resp = f"📅 Расписание на {day}:\n"
         for les in sorted(lessons, key=lambda x: x[1]):
-            resp += f"{les[1]}. {les[3]}\n"
+            room = f" (каб. {les[4]})" if les[4] else ""
+            resp += f"{les[1]}. {les[3]}{room}\n"
         return resp
 
     def _extract_day(self, text: str) -> Optional[str]:
@@ -276,7 +273,8 @@ class ScheduleRAGSystem:
         return int(match.group(1)) if match else None
 
     def _extract_subject(self, text: str) -> Optional[str]:
-        subjects = ['математика', 'физика', 'химия', 'биология', 'история', 'английский', 'русский']
+        subjects = ['математика', 'физика', 'химия', 'биология', 'история', 'география',
+                   'английский', 'русский', 'литература', 'информатика']
         for s in subjects:
             if s in text:
                 return s
@@ -294,12 +292,13 @@ class ScheduleParser:
             df = pd.read_excel(io.BytesIO(content))
             lessons = []
             for _, row in df.iterrows():
-                day = str(row.get('День', ''))
-                num = int(row.get('Номер_урока', 0))
-                subject = str(row.get('Предмет', ''))
-                room = str(row.get('Кабинет', ''))
+                day = str(row.get('День', row.get('день', ''))).strip()
+                num = int(row.get('Номер_урока', row.get('номер_урока', 0)))
+                subject = str(row.get('Предмет', row.get('предмет', ''))).strip()
+                room = str(row.get('Кабинет', row.get('кабинет', ''))).strip()
                 if day and num and subject:
-                    lessons.append({'day': day, 'lesson_number': num, 'subject': subject, 'room': room, 'start_time': '', 'teacher': ''})
+                    lessons.append({'day': day, 'lesson_number': num, 'subject': subject, 
+                                   'room': room, 'start_time': '', 'teacher': ''})
             return lessons
         except Exception as e:
             logger.error(f"Excel parse error: {e}")
@@ -325,8 +324,9 @@ class ScheduleParser:
                                 num = int(nums[0])
                                 words = re.findall(r'[А-Яа-я]+', line)
                                 if words:
-                                    subject = ' '.join(words[:3])
-                                    lessons.append({'day': cur_day, 'lesson_number': num, 'subject': subject, 'room': '', 'start_time': '', 'teacher': ''})
+                                    subject = ' '.join(words[:3])[:50]
+                                    lessons.append({'day': cur_day, 'lesson_number': num, 
+                                                   'subject': subject, 'room': '', 'start_time': '', 'teacher': ''})
             return lessons
         except Exception as e:
             logger.error(f"PDF parse error: {e}")
@@ -349,8 +349,9 @@ class ScheduleParser:
                     num = int(nums[0])
                     words = re.findall(r'[А-Яа-я]+', line)
                     if words:
-                        subject = ' '.join(words[:3])
-                        lessons.append({'day': cur_day, 'lesson_number': num, 'subject': subject, 'room': '', 'start_time': '', 'teacher': ''})
+                        subject = ' '.join(words[:3])[:50]
+                        lessons.append({'day': cur_day, 'lesson_number': num, 
+                                       'subject': subject, 'room': '', 'start_time': '', 'teacher': ''})
             return lessons
         except Exception as e:
             logger.error(f"Image parse error: {e}")
@@ -361,14 +362,14 @@ class DayComplexityAnalyzer:
     def calculate_day_complexity(self, lessons: List[Dict]) -> dict:
         count = len(lessons)
         if count == 0:
-            return {'score': 0, 'level': 'нет уроков', 'recommendations': ['Отдыхайте']}
+            return {'score': 0, 'level': 'нет уроков', 'recommendations': ['😊 Отдыхайте!'], 'lesson_count': 0}
         score = min(10, count * 0.8)
         if score <= 3:
-            level, rec = 'лёгкий', ['Можно расслабиться']
+            level, rec = 'лёгкий', ['Можно расслабиться после школы']
         elif score <= 6:
-            level, rec = 'средний', ['Планируйте время']
+            level, rec = 'средний', ['Планируйте время на домашку']
         else:
-            level, rec = 'сложный', ['Готовьтесь заранее']
+            level, rec = 'сложный', ['Готовьтесь заранее, будет тяжело']
         return {'score': round(score, 1), 'level': level, 'recommendations': rec, 'lesson_count': count}
 
 # ============= ЭКСПОРТ В КАЛЕНДАРЬ =============
@@ -403,8 +404,6 @@ class GigaChatService:
     def _get_token(self) -> Optional[str]:
         if self.access_token and self.expires_at and datetime.now() < self.expires_at:
             return self.access_token
-        if not GIGACHAT_CLIENT_ID:
-            return None
         try:
             creds = f"{GIGACHAT_CLIENT_ID}:{GIGACHAT_CLIENT_SECRET}"
             encoded = base64.b64encode(creds.encode()).decode()
@@ -435,7 +434,8 @@ class GigaChatService:
                 json={
                     "model": "GigaChat",
                     "messages": [{"role": "user", "content": text[:1000]}],
-                    "temperature": 0.7
+                    "temperature": 0.7,
+                    "max_tokens": 500
                 },
                 verify=False,
                 timeout=15
@@ -444,7 +444,7 @@ class GigaChatService:
                 return resp.json()['choices'][0]['message']['content']
         except Exception as e:
             logger.error(f"GigaChat request error: {e}")
-        return "Не удалось получить ответ"
+        return "Не удалось получить ответ от AI"
 
 # ============= ОСНОВНОЙ БОТ =============
 class TelegramBot:
@@ -456,7 +456,7 @@ class TelegramBot:
         self.rag = ScheduleRAGSystem()
         self.repl_parser = ReplacementParser()
         self.editor = ScheduleEditor(DB_PATH)
-        self.giga = GigaChatService() if GIGACHAT_CLIENT_ID else None
+        self.giga = GigaChatService()
         self._init_db()
 
     def _init_db(self):
@@ -483,6 +483,7 @@ class TelegramBot:
                 )
             ''')
             conn.commit()
+        logger.info("✅ База данных инициализирована")
 
     def get_schedule(self, user_id: int, day: str = None):
         with self.db.get_connection() as conn:
@@ -500,57 +501,83 @@ class TelegramBot:
                 for les in lessons:
                     conn.execute(
                         "INSERT INTO schedule (user_id, day, lesson_number, subject, room, start_time, teacher) VALUES (?,?,?,?,?,?,?)",
-                        (user_id, les['day'], les.get('lesson_number', 0), les['subject'], les.get('room', ''), les.get('start_time', ''), les.get('teacher', ''))
+                        (user_id, les['day'], les.get('lesson_number', 0), les['subject'], 
+                         les.get('room', ''), les.get('start_time', ''), les.get('teacher', ''))
                     )
                 conn.commit()
+            logger.info(f"Сохранено {len(lessons)} уроков для user {user_id}")
             return True
         except Exception as e:
-            logger.error(f"Save schedule error: {e}")
+            logger.error(f"Save error: {e}")
             return False
 
-    async def start(self, update: Update, context: CallbackContext):
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [KeyboardButton("📚 Помощь"), KeyboardButton("🤖 Вопрос")],
             [KeyboardButton("📅 Расписание"), KeyboardButton("📤 Загрузить")],
             [KeyboardButton("➕ Добавить урок"), KeyboardButton("➖ Удалить урок")],
-            [KeyboardButton("📊 Оценить завтра"), KeyboardButton("ℹ️ О боте")]
+            [KeyboardButton("📊 Оценить завтра"), KeyboardButton("📅 Экспорт календаря")],
+            [KeyboardButton("ℹ️ О боте")]
         ]
         await update.message.reply_text(
-            "👋 Привет! Я бот для расписания.\n"
-            "📌 Загрузите Excel/PDF/фото с расписанием.\n"
-            "📌 Спрашивайте: 'Какой завтра первый урок?'\n"
-            "📌 Автоматически обрабатываю замены.",
+            "👋 Привет! Я бот-помощник для расписания.\n\n"
+            "📌 **Что я умею:**\n"
+            "• Загружать расписание из Excel/PDF/фото\n"
+            "• Отвечать на вопросы о расписании\n"
+            "• Автоматически обрабатывать замены уроков\n"
+            "• Добавлять и удалять уроки\n"
+            "• Оценивать сложность дня\n"
+            "• Экспортировать расписание в календарь\n\n"
+            "💡 **Примеры:**\n"
+            "• 'Какой завтра первый урок?'\n"
+            "• 'Вместо физики будет история'\n"
+            "• 'Добавь урок в понедельник 3-м уроком математику'\n\n"
+            "Используй кнопки ниже или просто напиши вопрос!",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
         )
 
-    async def handle_message(self, update: Update, context: CallbackContext):
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = update.message.text
         user = update.effective_user
 
         # Кнопки
         if text == "📚 Помощь":
-            await update.message.reply_text("Напишите вопрос по учёбе, я отвечу с помощью GigaChat (если доступен).")
+            await update.message.reply_text("Напишите вопрос по учёбе, я отвечу с помощью ИИ.\n\nПримеры:\n• Объясни теорему Пифагора\n• Как решать квадратные уравнения?\n• Что такое фотосинтез?")
             return
         if text == "🤖 Вопрос":
-            await update.message.reply_text("Задайте вопрос:")
+            await update.message.reply_text("Задайте ваш вопрос:")
             return
         if text == "📅 Расписание":
             await self.show_schedule(update, context)
             return
         if text == "📤 Загрузить":
-            await update.message.reply_text("Отправьте Excel, PDF или фото расписания.")
+            await update.message.reply_text("📎 Отправьте файл с расписанием в одном из форматов:\n• Excel (.xlsx, .xls)\n• PDF\n• Фото расписания")
             return
         if text == "➕ Добавить урок":
-            await update.message.reply_text("Напишите: Добавь урок в [день] [номер] уроком [предмет]\nПример: Добавь урок в понедельник 3-м уроком математику")
+            await update.message.reply_text("➕ **Добавление урока:**\n\nНапишите в формате:\n`Добавь урок в [день] [номер] уроком [предмет]`\n\nПример:\n`Добавь урок в понедельник 3-м уроком математику в 201 кабинете`")
             return
         if text == "➖ Удалить урок":
-            await update.message.reply_text("Напишите: Удали урок в [день] [номер] урок\nПример: Удали урок в понедельник 3-й урок")
+            await update.message.reply_text("➖ **Удаление урока:**\n\nНапишите в формате:\n`Удали урок в [день] [номер] урок`\n\nПример:\n`Удали урок в понедельник 3-й урок`")
             return
         if text == "📊 Оценить завтра":
             await self.analyze_tomorrow(update, context)
             return
+        if text == "📅 Экспорт календаря":
+            await self.export_calendar(update, context)
+            return
         if text == "ℹ️ О боте":
-            await update.message.reply_text("Бот для управления расписанием. Версия 2.0. Поддерживает AI, замены, экспорт.")
+            await update.message.reply_text(
+                "🤖 **Бот для управления расписанием**\n\n"
+                "Версия: 2.0\n"
+                "Разработчик: MPIT StudyBuddy\n\n"
+                "📌 **Функции:**\n"
+                "• Поддержка Excel, PDF, фото\n"
+                "• ИИ-помощник (GigaChat)\n"
+                "• Автообработка замен\n"
+                "• Экспорт в календарь\n"
+                "• Анализ сложности дня\n\n"
+                "📢 Бот работает 24/7"
+            )
             return
 
         # Замена?
@@ -572,44 +599,42 @@ class TelegramBot:
             return
 
         # Обычный вопрос – GigaChat
-        if self.giga:
-            resp = self.giga.send_message(text)
-            await update.message.reply_text(resp or "Не удалось получить ответ.")
-        else:
-            await update.message.reply_text("AI отключён. Используйте команды для расписания.")
+        await update.message.reply_chat_action(action="typing")
+        resp = self.giga.send_message(text)
+        await update.message.reply_text(resp or "❌ Не удалось получить ответ. Попробуйте позже.")
 
     def _is_replacement(self, text: str) -> bool:
         return 'вместо' in text.lower() or ('не будет' in text.lower() and 'урок' in text.lower())
 
     def _is_add_command(self, text: str) -> bool:
-        return ('добавь' in text.lower() or 'внеси' in text.lower()) and 'урок' in text.lower()
+        return ('добавь' in text.lower() or 'внеси' in text.lower() or 'запиши' in text.lower()) and 'урок' in text.lower()
 
     def _is_remove_command(self, text: str) -> bool:
-        return ('удали' in text.lower() or 'отмени' in text.lower()) and 'урок' in text.lower()
+        return ('удали' in text.lower() or 'отмени' in text.lower() or 'убери' in text.lower()) and 'урок' in text.lower()
 
     def _is_schedule_question(self, text: str) -> bool:
-        kw = ['урок', 'расписание', 'кабинет', 'когда', 'сколько', 'первый', 'второй']
+        kw = ['урок', 'расписание', 'кабинет', 'когда', 'сколько', 'первый', 'второй', 'третий', 'четвертый', 'пятый']
         return any(k in text.lower() for k in kw)
 
-    async def handle_replacement(self, update: Update, context: CallbackContext, text: str):
+    async def handle_replacement(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
         data = self.repl_parser.parse_replacement_message(text)
         if not data['success']:
-            await update.message.reply_text("Не удалось распознать замену. Пример: 'Завтра вместо физики будет история'")
+            await update.message.reply_text("❌ Не удалось распознать замену.\n\nПример: 'Завтра 5-м уроком вместо физики будет история'")
             return
         user = update.effective_user
         if data['lesson_number'] and data['new_subject']:
             res = self.editor.replace_lesson(user.id, data['day'], data['lesson_number'], data['new_subject'], data['classroom'] or '')
             if res['success']:
-                await update.message.reply_text(f"✅ Замена применена: {data['day']}, {data['lesson_number']}-й урок → {data['new_subject']}")
+                await update.message.reply_text(f"✅ Замена применена!\n\n📅 {data['day']}\n🔄 {data['lesson_number']}-й урок: → {data['new_subject']}")
             else:
                 await update.message.reply_text(f"❌ Ошибка: {res['message']}")
         elif data['old_subject'] and data['is_cancellation']:
             res = self.editor.remove_lesson(user.id, data['day'], subject=data['old_subject'])
-            await update.message.reply_text("✅ Урок отменён" if res['success'] else "❌ Не удалось отменить")
+            await update.message.reply_text("✅ Урок отменён" if res['success'] else "❌ Не удалось отменить урок")
         else:
-            await update.message.reply_text("Формат замены не поддерживается. Попробуйте: 'Вместо X будет Y'")
+            await update.message.reply_text("❌ Не удалось применить замену. Проверьте формат сообщения.")
 
-    async def handle_add_lesson(self, update: Update, context: CallbackContext, text: str):
+    async def handle_add_lesson(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
         parsed = self.editor.parse_add_command(text)
         if not parsed['success']:
             await update.message.reply_text(parsed['message'])
@@ -617,7 +642,7 @@ class TelegramBot:
         res = self.editor.add_lesson(update.effective_user.id, parsed['day'], parsed['lesson_number'], parsed['subject'], parsed['room'])
         await update.message.reply_text(res['message'])
 
-    async def handle_remove_lesson(self, update: Update, context: CallbackContext, text: str):
+    async def handle_remove_lesson(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
         parsed = self.editor.parse_remove_command(text)
         if not parsed['success']:
             await update.message.reply_text(parsed['message'])
@@ -627,59 +652,77 @@ class TelegramBot:
         res = self.editor.remove_lesson(update.effective_user.id, parsed['day'], lesson_num, subject)
         await update.message.reply_text(res['message'])
 
-    async def handle_schedule_query(self, update: Update, context: CallbackContext, text: str):
+    async def handle_schedule_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
         user = update.effective_user
         ents = self.rag.parse_question(text)
         day = ents['day']
         lessons = self.get_schedule(user.id, day)
         if not lessons:
-            await update.message.reply_text(f"Нет расписания на {day}")
+            await update.message.reply_text(f"📭 Нет расписания на {day}\n\nЗагрузите расписание через кнопку «📤 Загрузить»")
             return
         answer = self.rag.generate_precise_answer(ents, lessons, day)
         await update.message.reply_text(answer)
 
-    async def show_schedule(self, update: Update, context: CallbackContext):
+    async def show_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         lessons = self.get_schedule(user.id)
         if not lessons:
-            await update.message.reply_text("Расписание не загружено. Используйте кнопку «📤 Загрузить»")
+            await update.message.reply_text("📭 Расписание не загружено.\n\nИспользуйте кнопку «📤 Загрузить» и отправьте файл с расписанием.")
             return
         by_day = {}
         for d, num, _, subj, room, _ in lessons:
             by_day.setdefault(d, []).append((num, subj, room))
-        resp = "📅 Ваше расписание:\n\n"
+        resp = "📅 **Ваше расписание:**\n\n"
         for day in ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота']:
             if day in by_day:
-                resp += f"*{day}*:\n"
+                resp += f"*{day}:*\n"
                 for num, subj, room in sorted(by_day[day]):
                     room_txt = f" (каб.{room})" if room else ""
-                    resp += f"{num}. {subj}{room_txt}\n"
+                    resp += f"  {num}. {subj}{room_txt}\n"
                 resp += "\n"
         await update.message.reply_text(resp)
 
-    async def analyze_tomorrow(self, update: Update, context: CallbackContext):
+    async def analyze_tomorrow(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         tomorrow = (datetime.now() + timedelta(days=1)).strftime('%A')
-        # Переведём на русский
-        ru_days = {'Monday': 'Понедельник', 'Tuesday': 'Вторник', 'Wednesday': 'Среда', 'Thursday': 'Четверг', 'Friday': 'Пятница', 'Saturday': 'Суббота', 'Sunday': 'Воскресенье'}
+        ru_days = {'Monday': 'Понедельник', 'Tuesday': 'Вторник', 'Wednesday': 'Среда', 
+                   'Thursday': 'Четверг', 'Friday': 'Пятница', 'Saturday': 'Суббота', 'Sunday': 'Воскресенье'}
         day_ru = ru_days[tomorrow]
         lessons_db = self.get_schedule(user.id, day_ru)
         if not lessons_db:
-            await update.message.reply_text(f"На {day_ru} нет уроков")
+            await update.message.reply_text(f"📭 На {day_ru} нет уроков\n\nЗагрузите расписание, чтобы получать аналитику.")
             return
         lessons = [{'day': l[0], 'lesson_number': l[1], 'subject': l[3]} for l in lessons_db]
         analysis = self.analyzer.calculate_day_complexity(lessons)
-        resp = f"📊 {day_ru}:\nСложность: {analysis['score']}/10 ({analysis['level']})\nУроков: {analysis['lesson_count']}\nРекомендации:\n"
+        resp = f"📊 **Анализ {day_ru}:**\n\n"
+        resp += f"⚡ Сложность: {analysis['score']}/10 ({analysis['level']})\n"
+        resp += f"📚 Уроков: {analysis['lesson_count']}\n\n"
+        resp += "**💡 Рекомендации:**\n"
         for rec in analysis['recommendations']:
             resp += f"• {rec}\n"
         await update.message.reply_text(resp)
 
-    async def handle_document(self, update: Update, context: CallbackContext):
+    async def export_calendar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user = update.effective_user
+        lessons_db = self.get_schedule(user.id)
+        if not lessons_db:
+            await update.message.reply_text("📭 Нет расписания для экспорта.\n\nСначала загрузите расписание.")
+            return
+        lessons = []
+        for day, num, _, subj, room, _ in lessons_db:
+            lessons.append({'day': day, 'lesson_number': num, 'subject': subj, 'room': room})
+        ics_content = self.calendar.generate_ics_file(lessons, weeks=4)
+        await update.message.reply_document(
+            document=InputFile(io.BytesIO(ics_content), filename="schedule.ics"),
+            caption="📅 Ваше расписание в календаре\n\nИмпортируйте файл в Google Calendar, Яндекс.Календарь или телефон."
+        )
+
+    async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         doc = update.message.document
         filename = doc.file_name
         ext = filename.split('.')[-1].lower()
-        await update.message.reply_text(f"Загружаю {filename}...")
+        await update.message.reply_text(f"📥 Загружаю {filename}...")
         file = await doc.get_file()
         content = await file.download_as_bytearray()
         if ext in ['xlsx', 'xls']:
@@ -687,26 +730,27 @@ class TelegramBot:
         elif ext == 'pdf':
             lessons = self.parser.parse_pdf(content)
         else:
-            await update.message.reply_text("Неподдерживаемый формат. Используйте Excel или PDF.")
+            await update.message.reply_text("❌ Неподдерживаемый формат.\n\nИспользуйте Excel (.xlsx, .xls) или PDF.")
             return
         if lessons:
             self.save_schedule(user.id, lessons)
-            await update.message.reply_text(f"✅ Загружено {len(lessons)} уроков")
+            days = set(l['day'] for l in lessons)
+            await update.message.reply_text(f"✅ Расписание загружено!\n\n📊 Статистика:\n• Уроков: {len(lessons)}\n• Дней: {len(days)}\n• Дни: {', '.join(days)}")
         else:
-            await update.message.reply_text("❌ Не удалось распознать расписание")
+            await update.message.reply_text("❌ Не удалось распознать расписание в файле.\n\n💡 Совет: Используйте шаблон с колонками: День, Номер_урока, Предмет, Кабинет")
 
-    async def handle_photo(self, update: Update, context: CallbackContext):
+    async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         photo = update.message.photo[-1]
-        await update.message.reply_text("Распознаю фото...")
+        await update.message.reply_text("🔍 Распознаю текст на фото...")
         file = await photo.get_file()
         content = await file.download_as_bytearray()
         lessons = self.parser.parse_image(content)
         if lessons:
             self.save_schedule(user.id, lessons)
-            await update.message.reply_text(f"✅ Распознано {len(lessons)} уроков")
+            await update.message.reply_text(f"✅ Распознано {len(lessons)} уроков!\n\nПроверьте расписание кнопкой «📅 Расписание»")
         else:
-            await update.message.reply_text("Не удалось распознать текст на фото")
+            await update.message.reply_text("❌ Не удалось распознать текст на фото.\n\n💡 Советы:\n• Сфотографируйте при хорошем освещении\n• Держите камеру прямо\n• Используйте Excel файл для лучшего результата")
 
     async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Ошибка: {context.error}")
@@ -714,13 +758,12 @@ class TelegramBot:
             await update.effective_message.reply_text("⚠️ Произошла ошибка. Попробуйте позже.")
 
     def run(self):
-        # Увеличенные таймауты и поддержка прокси (при необходимости)
+        # Настройка HTTPX с таймаутами
         request = HTTPXRequest(
             connect_timeout=60.0,
             read_timeout=60.0,
             write_timeout=60.0,
             pool_timeout=60.0,
-            # proxy_url='socks5://127.0.0.1:1080'  # раскомментировать при необходимости
         )
         app = Application.builder().token(TELEGRAM_TOKEN).request(request).build()
         app.add_handler(CommandHandler("start", self.start))
@@ -729,7 +772,8 @@ class TelegramBot:
         app.add_handler(MessageHandler(filters.PHOTO, self.handle_photo))
         app.add_error_handler(self.error_handler)
 
-        logger.info("🚀 Бот запущен (polling с таймаутами 60 сек)")
+        logger.info("🚀 Бот запущен и работает!")
+        logger.info(f"Бот: @{app.bot.username if hasattr(app.bot, 'username') else 'определяется'}")
         app.run_polling(poll_interval=1.0, timeout=60, drop_pending_updates=True)
 
 def main():
