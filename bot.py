@@ -4,6 +4,8 @@ import sqlite3
 import re
 import uuid
 import io
+import threading
+import asyncio
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
@@ -723,23 +725,44 @@ class TelegramBot:
         if update and update.effective_message:
             await update.effective_message.reply_text("⚠️ Произошла ошибка. Попробуйте позже.")
 
-def setup_handlers(app: Application):
-    bot = TelegramBot()
-    app.add_handler(CommandHandler("start", bot.start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_message))
-    app.add_handler(MessageHandler(filters.Document.ALL, bot.handle_document))
-    app.add_handler(MessageHandler(filters.PHOTO, bot.handle_photo))
-    app.add_error_handler(bot.error_handler)
-    return bot
+# ============= СОЗДАНИЕ БОТА =============
+def create_bot() -> Application:
+    """Создание и настройка Application"""
+    request = HTTPXRequest(
+        connect_timeout=60.0,
+        read_timeout=60.0,
+        write_timeout=60.0,
+        pool_timeout=60.0,
+    )
+    app = Application.builder().token(TELEGRAM_TOKEN).request(request).build()
+    
+    bot_instance = TelegramBot()
+    app.add_handler(CommandHandler("start", bot_instance.start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot_instance.handle_message))
+    app.add_handler(MessageHandler(filters.Document.ALL, bot_instance.handle_document))
+    app.add_handler(MessageHandler(filters.PHOTO, bot_instance.handle_photo))
+    app.add_error_handler(bot_instance.error_handler)
+    
+    return app
 
-# ============= WEBHOOK ENDPOINT =============
+# ============= WEBHOOK ENDPOINT (СИНХРОННЫЙ) =============
 @flask_app.route('/webhook', methods=['POST'])
-async def webhook():
+def webhook():
+    """Синхронный обработчик вебхука"""
     global telegram_app
     try:
+        # Получаем данные
         update_data = request.get_json(force=True)
+        
+        # Создаём event loop для обработки в текущем потоке
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Создаём Update объект и обрабатываем
         update = Update.de_json(update_data, telegram_app.bot)
-        await telegram_app.process_update(update)
+        loop.run_until_complete(telegram_app.process_update(update))
+        
+        loop.close()
         return jsonify({'status': 'ok'}), 200
     except Exception as e:
         logger.error(f"Webhook error: {e}")
@@ -752,20 +775,11 @@ def health():
 
 # ============= ЗАПУСК =============
 if __name__ == '__main__':
-    # Инициализация
+    # Инициализация БД
     init_db()
     
     # Создаём Application
-    request = HTTPXRequest(
-        connect_timeout=60.0,
-        read_timeout=60.0,
-        write_timeout=60.0,
-        pool_timeout=60.0,
-    )
-    telegram_app = Application.builder().token(TELEGRAM_TOKEN).request(request).build()
-    
-    # Настраиваем обработчики
-    setup_handlers(telegram_app)
+    telegram_app = create_bot()
     
     # Настройка вебхука
     webhook_url = os.environ.get("WEBHOOK_URL")
@@ -775,15 +789,15 @@ if __name__ == '__main__':
         webhook_path = f"{webhook_url}/webhook"
         
         # Устанавливаем вебхук
-        import asyncio
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(telegram_app.bot.set_webhook(webhook_path))
+        loop.close()
         logger.info(f"✅ Webhook установлен: {webhook_path}")
     else:
-        logger.info("⚠️ WEBHOOK_URL не задан, вебхук не установлен")
+        logger.warning("⚠️ WEBHOOK_URL не задан, вебхук не установлен")
     
     logger.info(f"🌐 Flask сервер запущен на порту {port}")
     
-    # Запускаем Flask с обработкой вебхуков
+    # Запускаем Flask
     flask_app.run(host="0.0.0.0", port=port)
