@@ -748,30 +748,45 @@ def create_bot() -> Application:
 # ============= WEBHOOK ENDPOINT (СИНХРОННЫЙ) =============
 @flask_app.route('/webhook', methods=['POST'])
 def webhook():
-    """Синхронный обработчик вебхука"""
+    """Синхронный обработчик вебхука с подробным логированием"""
     global telegram_app
     try:
+        # Логируем входящий запрос
+        logger.info("📨 Получен POST запрос на /webhook")
+        
         # Получаем данные
         update_data = request.get_json(force=True)
+        logger.info(f"📦 Данные получены: {str(update_data)[:200]}...")
+        
+        # Проверяем, что telegram_app существует
+        if telegram_app is None:
+            logger.error("❌ telegram_app не инициализирован!")
+            return jsonify({'status': 'error', 'message': 'App not initialized'}), 500
+        
+        # Проверяем, что у telegram_app есть bot
+        if telegram_app.bot is None:
+            logger.error("❌ telegram_app.bot не инициализирован!")
+            return jsonify({'status': 'error', 'message': 'Bot not initialized'}), 500
         
         # Создаём event loop для обработки в текущем потоке
+        logger.info("🔄 Создаём event loop...")
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
         # Создаём Update объект и обрабатываем
+        logger.info("📝 Создаём Update объект...")
         update = Update.de_json(update_data, telegram_app.bot)
+        
+        logger.info("⚙️ Обрабатываем обновление...")
         loop.run_until_complete(telegram_app.process_update(update))
         
         loop.close()
+        logger.info("✅ Обновление обработано успешно")
         return jsonify({'status': 'ok'}), 200
+        
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
+        logger.error(f"❌ Webhook error: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@flask_app.route('/')
-@flask_app.route('/health')
-def health():
-    return "OK", 200
 
 # ============= ЗАПУСК =============
 if __name__ == '__main__':
