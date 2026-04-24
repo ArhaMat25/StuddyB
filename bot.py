@@ -31,7 +31,7 @@ from telegram.request import HTTPXRequest
 # ============= КОНФИГУРАЦИЯ =============
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TELEGRAM_TOKEN:
-    TELEGRAM_TOKEN = "8573998335:AAENV4S0UhOUAmc3RpzEeFDLuModI36aqhM"  # fallback
+    TELEGRAM_TOKEN = "8573998335:AAENV4S0UhOUAmc3RpzEeFDLuModI36aqhM"
 
 GIGACHAT_CLIENT_ID = os.environ.get("GIGACHAT_CLIENT_ID", "019ac450-7c0b-7686-a4ec-e979dd4fa0f5")
 GIGACHAT_CLIENT_SECRET = os.environ.get("GIGACHAT_CLIENT_SECRET", "8dc579fc-56ee-49bd-b8cd-a0cd3fe4ae56")
@@ -747,6 +747,25 @@ class TelegramBot:
         logger.error(f"Ошибка: {context.error}")
         if update and update.effective_message:
             await update.effective_message.reply_text("⚠️ Произошла ошибка. Попробуйте позже.")
+
+    # ============= МЕТОД RUN - ЭТО САМОЕ ВАЖНОЕ! =============
+    def run(self):
+        """Запуск бота"""
+        request = HTTPXRequest(
+            connect_timeout=60.0,
+            read_timeout=60.0,
+            write_timeout=60.0,
+            pool_timeout=60.0,
+        )
+        app = Application.builder().token(TELEGRAM_TOKEN).request(request).build()
+        app.add_handler(CommandHandler("start", self.start))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        app.add_handler(MessageHandler(filters.Document.ALL, self.handle_document))
+        app.add_handler(MessageHandler(filters.PHOTO, self.handle_photo))
+        app.add_error_handler(self.error_handler)
+
+        logger.info("🚀 Бот запущен (polling с таймаутами 60 сек)")
+        app.run_polling(poll_interval=1.0, timeout=60, drop_pending_updates=True)
 
 # ============= FLASK ДЛЯ RENDER =============
 flask_app = Flask(__name__)
