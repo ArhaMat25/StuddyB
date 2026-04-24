@@ -1,0 +1,98 @@
+2026-04-24 21:53:22,427 - __main__ - INFO - ��� �������!
+2026-04-24 21:53:27,488 - __main__ - ERROR - ����������� ������: Timed out
+2026-04-24 21:56:08,099 - __main__ - INFO - ��� �������!
+2026-04-24 21:56:13,151 - __main__ - ERROR - ����������� ������: Timed out
+2026-04-24 21:56:28,401 - __main__ - INFO - ��� �������!
+2026-04-24 21:56:33,450 - __main__ - ERROR - ����������� ������: Timed out
+2026-04-24 22:24:40,917 - __main__ - INFO - 🚀 Бот запущен (polling с таймаутами 60 сек)
+2026-04-24 22:25:02,078 - __main__ - CRITICAL - Критическая ошибка: httpx.ConnectError: All connection attempts failed
+Traceback (most recent call last):
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpx\_transports\default.py", line 66, in map_httpcore_exceptions
+    yield
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpx\_transports\default.py", line 366, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpcore\_async\connection_pool.py", line 256, in handle_async_request
+    raise exc from None
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpcore\_async\connection_pool.py", line 236, in handle_async_request
+    response = await connection.handle_async_request(
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpcore\_async\connection.py", line 101, in handle_async_request
+    raise exc
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpcore\_async\connection.py", line 78, in handle_async_request
+    stream = await self._connect(request)
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpcore\_async\connection.py", line 124, in _connect
+    stream = await self._network_backend.connect_tcp(**kwargs)
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpcore\_backends\auto.py", line 31, in connect_tcp
+    return await self._backend.connect_tcp(
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpcore\_backends\anyio.py", line 113, in connect_tcp
+    with map_exceptions(exc_map):
+  File "C:\Program Files\Python310\lib\contextlib.py", line 153, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpcore\_exceptions.py", line 14, in map_exceptions
+    raise to_exc(exc) from exc
+httpcore.ConnectError: All connection attempts failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\request\_httpxrequest.py", line 268, in do_request
+    res = await self._client.request(
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpx\_client.py", line 1530, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpx\_client.py", line 1617, in send
+    response = await self._send_handling_auth(
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpx\_client.py", line 1645, in _send_handling_auth
+    response = await self._send_handling_redirects(
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpx\_client.py", line 1682, in _send_handling_redirects
+    response = await self._send_single_request(request)
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpx\_client.py", line 1719, in _send_single_request
+    response = await transport.handle_async_request(request)
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpx\_transports\default.py", line 365, in handle_async_request
+    with map_httpcore_exceptions():
+  File "C:\Program Files\Python310\lib\contextlib.py", line 153, in __exit__
+    self.gen.throw(typ, value, traceback)
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\httpx\_transports\default.py", line 83, in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+httpx.ConnectError: All connection attempts failed
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\bot.py", line 738, in main
+    bot.run()
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\bot.py", line 733, in run
+    app.run_polling(poll_interval=1.0, timeout=60, drop_pending_updates=True)
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\ext\_application.py", line 818, in run_polling
+    return self.__run(
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\ext\_application.py", line 1006, in __run
+    raise exc
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\ext\_application.py", line 995, in __run
+    loop.run_until_complete(self.initialize())
+  File "C:\Program Files\Python310\lib\asyncio\base_events.py", line 646, in run_until_complete
+    return future.result()
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\ext\_application.py", line 477, in initialize
+    await self.bot.initialize()
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\ext\_extbot.py", line 286, in initialize
+    await super().initialize()
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\_bot.py", line 735, in initialize
+    await self.get_me()
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\ext\_extbot.py", line 1697, in get_me
+    return await super().get_me(
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\_bot.py", line 525, in decorator
+    result = await func(self, *args, **kwargs)  # skipcq: PYL-E1102
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\_bot.py", line 775, in get_me
+    result = await self._post(
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\_bot.py", line 613, in _post
+    return await self._do_post(
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\ext\_extbot.py", line 340, in _do_post
+    return await super()._do_post(
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\_bot.py", line 641, in _do_post
+    return await request.post(
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\request\_baserequest.py", line 200, in post
+    result = await self._request_wrapper(
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\request\_baserequest.py", line 340, in _request_wrapper
+    raise exc
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\request\_baserequest.py", line 330, in _request_wrapper
+    code, payload = await self.do_request(
+  File "C:\Users\Семья\Desktop\MPIT-StudyBuddy\venv\lib\site-packages\telegram\request\_httpxrequest.py", line 292, in do_request
+    raise NetworkError(f"httpx.{err.__class__.__name__}: {err}") from err
+telegram.error.NetworkError: httpx.ConnectError: All connection attempts failed
