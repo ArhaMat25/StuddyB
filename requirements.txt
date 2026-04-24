@@ -1,4 +1,5 @@
 python-telegram-bot==20.7
+Flask==3.0.0
 pandas==2.0.3
 openpyxl==3.1.2
 pdfplumber==0.10.3
@@ -6,5 +7,3 @@ pytesseract==0.3.10
 Pillow==10.0.1
 icalendar==5.0.11
 requests==2.31.0
-python-dotenv==1.0.0
-Flask==3.0.0
