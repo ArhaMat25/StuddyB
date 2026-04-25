@@ -1,5 +1,7 @@
 import os
 import logging
+import asyncio
+import nest_asyncio      # обязательно для предотвращения ошибок event loop
 import sqlite3
 import re
 import io
@@ -17,6 +19,9 @@ from PIL import Image
 from icalendar import Calendar, Event
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+
+# Разрешаем вложенные циклы событий (необходимо для python-telegram-bot)
+nest_asyncio.apply()
 
 # ============= КОНФИГУРАЦИЯ =============
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -676,7 +681,7 @@ class GigaChatService:
 
 giga = GigaChatService()
 
-# ============= ОСНОВНЫЕ ОБРАБОТЧИКИ КОМАНД (все кнопки, замены, RAG и т.д.) =============
+# ============= ОСНОВНЫЕ ОБРАБОТЧИКИ =============
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [KeyboardButton("📚 Помощь с учебой"), KeyboardButton("🤖 Задать вопрос")],
@@ -868,7 +873,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user = update.effective_user
 
-    # Ответы на кнопки
+    # Кнопки
     if text == "📚 Помощь с учебой":
         await update.message.reply_text("Напишите вопрос по предмету, я постараюсь ответить с помощью GigaChat.")
         return
@@ -980,9 +985,8 @@ async def send_morning_reminder(context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=user_id, text=msg)
         await asyncio.sleep(0.1)
 
-# ============= ЗАПУСК (POLLING) =============
+# ============= ЗАПУСК =============
 async def run_bot():
-    logger.info("🚀 Запуск Telegram бота...")
     init_db()
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -990,7 +994,6 @@ async def run_bot():
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Утренние напоминания
     if app.job_queue:
         app.job_queue.run_daily(send_morning_reminder, time=time(hour=7, minute=0, second=0), days=tuple(range(7)))
         logger.info("⏰ Утренние напоминания настроены на 7:00")
@@ -1001,5 +1004,4 @@ async def run_bot():
     await app.run_polling(poll_interval=1.0, timeout=60, drop_pending_updates=True)
 
 if __name__ == '__main__':
-    import asyncio
     asyncio.run(run_bot())
