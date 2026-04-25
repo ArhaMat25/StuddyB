@@ -1,7 +1,5 @@
 import os
 import logging
-import asyncio
-import nest_asyncio      # обязательно для предотвращения ошибок event loop
 import sqlite3
 import re
 import io
@@ -19,9 +17,6 @@ from PIL import Image
 from icalendar import Calendar, Event
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, InputFile
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-
-# Разрешаем вложенные циклы событий (необходимо для python-telegram-bot)
-nest_asyncio.apply()
 
 # ============= КОНФИГУРАЦИЯ =============
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -985,8 +980,8 @@ async def send_morning_reminder(context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=user_id, text=msg)
         await asyncio.sleep(0.1)
 
-# ============= ЗАПУСК =============
-async def run_bot():
+# ============= ЗАПУСК (синхронный) =============
+def run_bot():
     init_db()
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -1001,7 +996,7 @@ async def run_bot():
         logger.warning("JobQueue недоступна")
 
     logger.info("✅ Бот запущен")
-    await app.run_polling(poll_interval=1.0, timeout=60, drop_pending_updates=True)
+    app.run_polling(poll_interval=1.0, timeout=60, drop_pending_updates=True)
 
 if __name__ == '__main__':
-    asyncio.run(run_bot())
+    run_bot()
